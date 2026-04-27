@@ -1,15 +1,18 @@
 package com.advpro.profiling.tutorial.service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
 import com.advpro.profiling.tutorial.model.Student;
 import com.advpro.profiling.tutorial.model.StudentCourse;
 import com.advpro.profiling.tutorial.repository.StudentCourseRepository;
 import com.advpro.profiling.tutorial.repository.StudentRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * @author muhammad.khadafi
@@ -24,40 +27,37 @@ public class StudentService {
     private StudentCourseRepository studentCourseRepository;
 
     public List<StudentCourse> getAllStudentsWithCourses() {
+        // Load all students and student-course relations once to avoid N+1 queries.
         List<Student> students = studentRepository.findAll();
-        List<StudentCourse> studentCourses = new ArrayList<>();
-        for (Student student : students) {
-            List<StudentCourse> studentCoursesByStudent = studentCourseRepository.findByStudentId(student.getId());
-            for (StudentCourse studentCourseByStudent : studentCoursesByStudent) {
-                StudentCourse studentCourse = new StudentCourse();
-                studentCourse.setStudent(student);
-                studentCourse.setCourse(studentCourseByStudent.getCourse());
-                studentCourses.add(studentCourse);
-            }
+        Map<Long, Student> studentById = new HashMap<>(students.size());
+        for (Student s : students) {
+            studentById.put(s.getId(), s);
         }
-        return studentCourses;
+
+        List<StudentCourse> allStudentCourses = studentCourseRepository.findAll();
+        List<StudentCourse> result = new ArrayList<>(allStudentCourses.size());
+        for (StudentCourse sc : allStudentCourses) {
+            StudentCourse mapped = new StudentCourse();
+            Long sid = sc.getStudent() != null ? sc.getStudent().getId() : null;
+            Student fullStudent = sid != null ? studentById.get(sid) : null;
+            mapped.setStudent(fullStudent != null ? fullStudent : sc.getStudent());
+            mapped.setCourse(sc.getCourse());
+            result.add(mapped);
+        }
+
+        return result;
     }
 
     public Optional<Student> findStudentWithHighestGpa() {
-        List<Student> students = studentRepository.findAll();
-        Student highestGpaStudent = null;
-        double highestGpa = 0.0;
-        for (Student student : students) {
-            if (student.getGpa() > highestGpa) {
-                highestGpa = student.getGpa();
-                highestGpaStudent = student;
-            }
-        }
-        return Optional.ofNullable(highestGpaStudent);
+        // Let the database find the top student by GPA to avoid loading all rows
+        return studentRepository.findTopByOrderByGpaDesc();
     }
 
     public String joinStudentNames() {
-        List<Student> students = studentRepository.findAll();
-        String result = "";
-        for (Student student : students) {
-            result += student.getName() + ", ";
-        }
-        return result.substring(0, result.length() - 2);
+        // Fetch only names and join them efficiently
+        List<String> names = studentRepository.findAllNames();
+        if (names.isEmpty()) return "";
+        return String.join(", ", names);
     }
 }
 
